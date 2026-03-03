@@ -1,0 +1,13 @@
+# Minimal OpenSandbox server config for integration tests.
+# No api_key = auth disabled (suitable for local/CI).
+[server]
+host = "0.0.0.0"
+port = 8090
+log_level = "INFO"
+
+[runtime]
+type = "docker"
+execd_image = "opensandbox/execd:v1.0.6"
+
+[docker]
+network_mode = "bridge"
