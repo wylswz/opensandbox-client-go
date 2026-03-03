@@ -26,8 +26,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/wylswz/opensandbox-client-go/internal/generated/sandbox"
-	"github.com/wylswz/opensandbox-client-go/internal/generated/execd"
+	"github.com/wylswz/opensandbox-client-go/pkg/generated/execd"
+	"github.com/wylswz/opensandbox-client-go/pkg/generated/sandbox"
 	"github.com/wylswz/opensandbox-client-go/pkg/opensandbox"
 )
 

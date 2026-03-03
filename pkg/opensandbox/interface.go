@@ -4,8 +4,8 @@ import (
 	"context"
 	"io"
 
-	"github.com/wylswz/opensandbox-client-go/internal/generated/execd"
-	"github.com/wylswz/opensandbox-client-go/internal/generated/sandbox"
+	"github.com/wylswz/opensandbox-client-go/pkg/generated/execd"
+	"github.com/wylswz/opensandbox-client-go/pkg/generated/sandbox"
 )
 
 // Interface is the main client interface for OpenSandbox, similar to kubernetes.Interface.

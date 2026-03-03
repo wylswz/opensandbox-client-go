@@ -3,7 +3,7 @@ package opensandbox
 import (
 	"context"
 
-	"github.com/wylswz/opensandbox-client-go/internal/generated/sandbox"
+	"github.com/wylswz/opensandbox-client-go/pkg/generated/sandbox"
 )
 
 type sandboxClient struct {

@@ -9,7 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CACHE_DIR="${ROOT_DIR}/.cache"
 SPECS_DIR="${ROOT_DIR}/specs"
-GENERATED_DIR="${ROOT_DIR}/internal/generated"
+GENERATED_DIR="${ROOT_DIR}/pkg/generated"
 
 # OpenAPI Generator version (pinned for reproducibility)
 OPENAPI_GENERATOR_VERSION="${OPENAPI_GENERATOR_VERSION:-7.14.0}"

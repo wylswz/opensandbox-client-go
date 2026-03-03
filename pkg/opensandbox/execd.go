@@ -13,8 +13,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/wylswz/opensandbox-client-go/internal/generated/execd"
 	"github.com/wylswz/opensandbox-client-go/internal/sse"
+	"github.com/wylswz/opensandbox-client-go/pkg/generated/execd"
 )
 
 type execdClient struct {

@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wylswz/opensandbox-client-go/internal/generated/execd"
-	"github.com/wylswz/opensandbox-client-go/internal/generated/sandbox"
+	"github.com/wylswz/opensandbox-client-go/pkg/generated/execd"
+	"github.com/wylswz/opensandbox-client-go/pkg/generated/sandbox"
 )
 
 // formatAPIErr appends execd response body to error message when available.

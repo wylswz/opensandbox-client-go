@@ -26,7 +26,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	openapiclient "github.com/alibaba/opensandbox-client-go"
+	openapiclient "github.com/wylswz/opensandbox-client-go"
 )
 
 func main() {
@@ -87,7 +87,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	openapiclient "github.com/alibaba/opensandbox-client-go"
+	openapiclient "github.com/wylswz/opensandbox-client-go"
 )
 
 func main() {

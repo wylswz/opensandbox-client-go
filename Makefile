@@ -18,4 +18,4 @@ test-integration:
 
 # Remove generated code and caches
 clean:
-	rm -rf internal/generated .cache
+	rm -rf pkg/generated .cache

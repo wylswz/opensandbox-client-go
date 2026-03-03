@@ -22,8 +22,8 @@ import (
     "context"
     "log"
 
-    "github.com/wylswz/opensandbox-client-go/internal/generated/execd"
-    "github.com/wylswz/opensandbox-client-go/internal/generated/sandbox"
+    "github.com/wylswz/opensandbox-client-go/pkg/generated/execd"
+    "github.com/wylswz/opensandbox-client-go/pkg/generated/sandbox"
     "github.com/wylswz/opensandbox-client-go/pkg/opensandbox"
 )
 
@@ -61,7 +61,7 @@ func main() {
 
 ## Code generation
 
-Generated code lives in `internal/generated/`. Regenerate with:
+Generated code lives in `pkg/generated/`. Regenerate with:
 
 ```bash
 make generate

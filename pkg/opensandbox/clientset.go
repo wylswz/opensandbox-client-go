@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/wylswz/opensandbox-client-go/internal/generated/execd"
-	"github.com/wylswz/opensandbox-client-go/internal/generated/sandbox"
+	"github.com/wylswz/opensandbox-client-go/pkg/generated/execd"
+	"github.com/wylswz/opensandbox-client-go/pkg/generated/sandbox"
 )
 
 // Clientset is the main client for OpenSandbox APIs, similar to kubernetes.Clientset.
@@ -47,11 +47,11 @@ func NewForConfig(c *Config) (*Clientset, error) {
 	}
 	execdCfg.UserAgent = c.UserAgent
 	cs.execd = &execdClient{
-		client:       execd.NewAPIClient(execdCfg),
-		accessToken:  c.AccessToken,
-		execdAPIURL:  c.ExecdAPIURL,
-		httpClient:   c.HTTPClient,
-		userAgent:    c.UserAgent,
+		client:      execd.NewAPIClient(execdCfg),
+		accessToken: c.AccessToken,
+		execdAPIURL: c.ExecdAPIURL,
+		httpClient:  c.HTTPClient,
+		userAgent:   c.UserAgent,
 	}
 
 	return cs, nil
