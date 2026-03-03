@@ -86,6 +86,9 @@ type CodeInterface interface {
 type CommandInterface interface {
 	// Run executes a shell command.
 	Run(ctx context.Context, req execd.RunCommandRequest) (*execd.ServerStreamEvent, error)
+	// Stream executes a shell command and emits typed events as they arrive.
+	// Returning an error from onEvent stops streaming and returns that error.
+	Stream(ctx context.Context, req execd.RunCommandRequest, onEvent func(CommandStreamEvent) error) error
 	// GetStatus returns the status of a command session.
 	GetStatus(ctx context.Context, sessionID string) (*execd.CommandStatusResponse, error)
 	// GetLogs returns stdout/stderr for a background command.

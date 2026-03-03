@@ -363,6 +363,28 @@ func TestIntegration_Execd_Command_Run(t *testing.T) {
 	t.Logf("Command response: %+v", resp)
 }
 
+func TestIntegration_Execd_Command_Stream(t *testing.T) {
+	cs, _, cleanup := execdTestHelper(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	var stdout strings.Builder
+	var types []CommandStreamEventType
+	err := cs.Execd().Command().Stream(ctx, execd.RunCommandRequest{Command: "printf hello-stream"}, func(evt CommandStreamEvent) error {
+		types = append(types, evt.Type)
+		if evt.Type == CommandStreamEventStdout {
+			stdout.WriteString(evt.Text)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "hello-stream") {
+		t.Fatalf("expected stdout to contain hello-stream, got %q (types: %v)", stdout.String(), types)
+	}
+}
+
 func TestIntegration_Execd_Filesystem(t *testing.T) {
 	cs, _, cleanup := execdTestHelper(t)
 	defer cleanup()

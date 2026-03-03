@@ -14,12 +14,9 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
@@ -29,9 +26,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/wylswz/opensandbox-client-go/internal/generated/execd"
 	"github.com/wylswz/opensandbox-client-go/internal/generated/sandbox"
-	"github.com/wylswz/opensandbox-client-go/internal/sse"
+	"github.com/wylswz/opensandbox-client-go/internal/generated/execd"
 	"github.com/wylswz/opensandbox-client-go/pkg/opensandbox"
 )
 
@@ -310,7 +306,7 @@ func runAttach(cfg *opensandbox.Config, sandboxID string) error {
 		}
 
 		// Stream the command output in real time.
-		runErr := streamCommand(cmdCtx, execdURL, accessToken, line, cwd)
+		runErr := streamCommand(cmdCtx, execdCS.Execd().Command(), line, cwd)
 		canceled := cmdCtx.Err() == context.Canceled
 		cancel()
 		cancelCurrent = func() {}
@@ -372,153 +368,52 @@ func resolveExecdEndpoint(ctx context.Context, cs *opensandbox.Clientset, cfg *o
 	return raw, accessToken, nil
 }
 
-// streamCommand sends a shell command to execd and prints its output to stdout
-// as SSE events arrive. A trailing newline is added if the output lacks one.
-func streamCommand(ctx context.Context, execdURL, accessToken, cmd, cwd string) error {
-	reqBody := map[string]interface{}{"command": cmd}
+// streamCommand sends a shell command to execd and prints typed stream output.
+func streamCommand(ctx context.Context, commandAPI opensandbox.CommandInterface, cmd, cwd string) error {
+	req := execd.RunCommandRequest{Command: cmd}
 	if cwd != "" && cwd != "/" {
-		reqBody["cwd"] = cwd
-	}
-
-	req, err := buildExecdRequest(ctx, execdURL, accessToken, "/command", reqBody)
-	if err != nil {
-		return err
+		req.Cwd = &cwd
 	}
 
 	debug := os.Getenv("OPENSANDBOX_DEBUG") != ""
 	var lastChar byte
-	err = sse.Stream(ctx, http.DefaultClient, req, func(raw json.RawMessage) {
+	err := commandAPI.Stream(ctx, req, func(evt opensandbox.CommandStreamEvent) error {
 		if debug {
-			fmt.Fprintf(os.Stderr, "[SSE] %s\n", string(raw))
+			fmt.Fprintf(os.Stderr, "[SSE] %s\n", string(evt.Raw))
 		}
-		text := extractText(raw)
+		switch evt.Type {
+		case opensandbox.CommandStreamEventInit, opensandbox.CommandStreamEventPing, opensandbox.CommandStreamEventExecutionComplete:
+			return nil
+		}
+
+		text := evt.Text
+		if text == "" {
+			if plain, ok := evt.Results["text/plain"]; ok {
+				if s, ok := plain.(string); ok {
+					text = s
+				}
+			}
+		}
+		if text != "" && (evt.Type == opensandbox.CommandStreamEventStdout || evt.Type == opensandbox.CommandStreamEventStderr) {
+			// Some servers stream line-oriented stdout/stderr chunks without trailing
+			// newline characters. Add one so common commands (e.g. ls) render correctly.
+			if !strings.HasSuffix(text, "\n") {
+				text += "\n"
+			}
+		}
 		if text != "" {
 			fmt.Print(text)
 			lastChar = text[len(text)-1]
 		}
+		if evt.Error != nil && evt.Error.Value != "" {
+			fmt.Fprintf(os.Stderr, "\nerror: %s\n", evt.Error.Value)
+		}
+		return nil
 	})
-
-	// Ensure the next prompt starts on a fresh line.
 	if lastChar != 0 && lastChar != '\n' {
 		fmt.Println()
 	}
 	return err
-}
-
-// extractText pulls printable text out of a raw SSE data payload.
-// It accepts multiple server event shapes so attach works against older/newer
-// server versions (text, stdout/stderr, output/content, results text/plain).
-func extractText(raw json.RawMessage) string {
-	// Strategy 1: decode to a generic map first and extract common keys.
-	// This avoids losing output when JSON unmarshals successfully into
-	// ServerStreamEvent but field names differ (e.g. "stdout", "output").
-	var m map[string]interface{}
-	if err := json.Unmarshal(raw, &m); err == nil {
-		if s := firstString(m, "text", "stdout", "stderr", "output", "content", "message", "data"); s != "" {
-			return ensureTrailingNewline(s)
-		}
-		if results, ok := m["results"].(map[string]interface{}); ok {
-			if s := firstString(results, "text/plain", "stdout", "stderr", "output", "text", "content"); s != "" {
-				return ensureTrailingNewline(s)
-			}
-		}
-		// Some servers only send error blocks with no text payload.
-		if errObj, ok := m["error"].(map[string]interface{}); ok {
-			evalue := firstString(errObj, "evalue", "value", "message")
-			if evalue == "" {
-				evalue = "command failed"
-			}
-			if tbRaw, ok := errObj["traceback"].([]interface{}); ok && len(tbRaw) > 0 {
-				tb := make([]string, 0, len(tbRaw))
-				for _, item := range tbRaw {
-					tb = append(tb, toString(item))
-				}
-				return ensureTrailingNewline(evalue + "\n" + strings.Join(tb, "\n"))
-			}
-			return ensureTrailingNewline(evalue)
-		}
-		return ""
-	}
-
-	// Strategy 2: decode with typed struct for expected modern schema.
-	var evt execd.ServerStreamEvent
-	if err := json.Unmarshal(raw, &evt); err == nil {
-		if evt.Text != nil && *evt.Text != "" {
-			if evt.Error != nil && evt.Error.Evalue != nil && *evt.Error.Evalue != "" {
-				tb := strings.Join(evt.Error.Traceback, "\n")
-				if tb != "" {
-					return ensureTrailingNewline(*evt.Text + "\n" + tb)
-				}
-			}
-			return ensureTrailingNewline(*evt.Text)
-		}
-		if plain, ok := evt.Results["text/plain"]; ok {
-			if s, ok := plain.(string); ok && s != "" {
-				return ensureTrailingNewline(s)
-			}
-		}
-		return ""
-	}
-
-	// Strategy 3: server sent raw (non-JSON) text in the data field.
-	s := strings.TrimRight(string(raw), "\r\n")
-	if s != "" {
-		return s + "\n"
-	}
-	return ""
-}
-
-func firstString(m map[string]interface{}, keys ...string) string {
-	for _, k := range keys {
-		if v, ok := m[k]; ok {
-			if s := toString(v); s != "" {
-				return s
-			}
-		}
-	}
-	return ""
-}
-
-func toString(v interface{}) string {
-	switch t := v.(type) {
-	case string:
-		return t
-	case []byte:
-		return string(t)
-	default:
-		return ""
-	}
-}
-
-func ensureTrailingNewline(s string) string {
-	if s == "" || strings.HasSuffix(s, "\n") {
-		return s
-	}
-	return s + "\n"
-}
-
-// buildExecdRequest constructs an HTTP POST request targeting an execd endpoint.
-func buildExecdRequest(ctx context.Context, execdURL, accessToken, endpoint string, body interface{}) (*http.Request, error) {
-	reqURL, err := url.JoinPath(strings.TrimSuffix(execdURL, "/"), endpoint)
-	if err != nil {
-		return nil, err
-	}
-
-	bodyJSON, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(bodyJSON))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "text/event-stream")
-	if accessToken != "" {
-		req.Header.Set("X-EXECD-ACCESS-TOKEN", accessToken)
-	}
-	return req, nil
 }
 
 // isCdCommand reports whether the input line is a cd command.
@@ -552,4 +447,3 @@ func shortID(id string) string {
 	}
 	return id
 }
-

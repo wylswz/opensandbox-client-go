@@ -173,6 +173,72 @@ func (c *commandClient) Run(ctx context.Context, req execd.RunCommandRequest) (*
 	return parseLastServerStreamEvent(events)
 }
 
+func (c *commandClient) Stream(ctx context.Context, req execd.RunCommandRequest, onEvent func(CommandStreamEvent) error) error {
+	if onEvent == nil {
+		return fmt.Errorf("onEvent callback is required")
+	}
+	streamCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	httpReq, err := c.execd.buildSSERequest(streamCtx, "/command", req)
+	if err != nil {
+		return err
+	}
+
+	var callbackErr error
+	err = sse.Stream(streamCtx, c.execd.httpClient, httpReq, func(raw json.RawMessage) {
+		if callbackErr != nil {
+			return
+		}
+		evt, parseErr := parseCommandStreamEvent(raw)
+		if parseErr != nil {
+			callbackErr = parseErr
+			cancel()
+			return
+		}
+		if cbErr := onEvent(evt); cbErr != nil {
+			callbackErr = cbErr
+			cancel()
+		}
+	})
+	if callbackErr != nil {
+		return callbackErr
+	}
+	return err
+}
+
+func parseCommandStreamEvent(raw json.RawMessage) (CommandStreamEvent, error) {
+	var evt execd.ServerStreamEvent
+	if err := json.Unmarshal(raw, &evt); err != nil {
+		return CommandStreamEvent{}, err
+	}
+
+	out := CommandStreamEvent{
+		Type:           CommandStreamEventType(evt.GetType()),
+		ExecutionCount: evt.ExecutionCount,
+		ExecutionTime:  evt.ExecutionTime,
+		Timestamp:      evt.Timestamp,
+		Results:        evt.Results,
+		Raw:            append(json.RawMessage(nil), raw...),
+	}
+	if evt.Text != nil {
+		out.Text = *evt.Text
+	}
+	if evt.Error != nil {
+		streamErr := &CommandStreamError{
+			Traceback: evt.Error.Traceback,
+		}
+		if evt.Error.Ename != nil {
+			streamErr.Name = *evt.Error.Ename
+		}
+		if evt.Error.Evalue != nil {
+			streamErr.Value = *evt.Error.Evalue
+		}
+		out.Error = streamErr
+	}
+	return out, nil
+}
+
 func (c *commandClient) GetStatus(ctx context.Context, sessionID string) (*execd.CommandStatusResponse, error) {
 	resp, _, err := c.execd.client.CommandAPI.GetCommandStatus(c.execd.authContext(ctx), sessionID).Execute()
 	return resp, err
