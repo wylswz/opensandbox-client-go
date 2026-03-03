@@ -38,9 +38,9 @@ type Config struct {
 // DefaultConfig returns a Config with default local development URLs.
 func DefaultConfig() *Config {
 	return &Config{
-		SandboxAPIURL: "http://localhost:8080/v1",
-		ExecdAPIURL:   "http://localhost:44772",
-		UserAgent:     "opensandbox-client-go/1.0",
+		SandboxAPIURL: DefaultSandboxAPIURL,
+		ExecdAPIURL:   DefaultExecdAPIURL,
+		UserAgent:     defaultUserAgent,
 	}
 }
 
@@ -60,8 +60,8 @@ func getOrDefault(envMap map[string]string, key, def string) string {
 
 func NewConfigFromEnv() *Config {
 	return &Config{
-		SandboxAPIURL: envOr(EnvSandboxAPIURL, "http://localhost:8080/v1"),
-		ExecdAPIURL:   envOr(EnvExecdAPIURL, "http://localhost:44772"),
+		SandboxAPIURL: envOr(EnvSandboxAPIURL, DefaultSandboxAPIURL),
+		ExecdAPIURL:   envOr(EnvExecdAPIURL, DefaultExecdAPIURL),
 		APIKey:        envOr(EnvAPIKey, ""),
 		AccessToken:   envOr(EnvAccessToken, ""),
 	}

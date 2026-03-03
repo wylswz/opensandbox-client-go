@@ -80,13 +80,13 @@ func (c *execdClient) buildSSERequest(ctx context.Context, path string, body int
 		return nil, err
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set(headerContentType, contentTypeJSON)
+	req.Header.Set(headerAccept, acceptSSE)
 	if c.userAgent != "" {
-		req.Header.Set("User-Agent", c.userAgent)
+		req.Header.Set(headerUserAgent, c.userAgent)
 	}
 	if c.accessToken != "" {
-		req.Header.Set("X-EXECD-ACCESS-TOKEN", c.accessToken)
+		req.Header.Set(headerExecdAccessToken, c.accessToken)
 	}
 
 	return req, nil
@@ -140,7 +140,7 @@ func (c *codeClient) DeleteContextsByLanguage(ctx context.Context, language stri
 }
 
 func (c *codeClient) RunCode(ctx context.Context, req execd.RunCodeRequest) (*execd.ServerStreamEvent, error) {
-	httpReq, err := c.execd.buildSSERequest(ctx, "/code", req)
+	httpReq, err := c.execd.buildSSERequest(ctx, execdPathCode, req)
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +162,7 @@ type commandClient struct {
 }
 
 func (c *commandClient) Run(ctx context.Context, req execd.RunCommandRequest) (*execd.ServerStreamEvent, error) {
-	httpReq, err := c.execd.buildSSERequest(ctx, "/command", req)
+	httpReq, err := c.execd.buildSSERequest(ctx, execdPathCommand, req)
 	if err != nil {
 		return nil, err
 	}
@@ -175,12 +175,12 @@ func (c *commandClient) Run(ctx context.Context, req execd.RunCommandRequest) (*
 
 func (c *commandClient) Stream(ctx context.Context, req execd.RunCommandRequest, onEvent func(CommandStreamEvent) error) error {
 	if onEvent == nil {
-		return fmt.Errorf("onEvent callback is required")
+		return fmt.Errorf(errOnEventCallbackRequired)
 	}
 	streamCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	httpReq, err := c.execd.buildSSERequest(streamCtx, "/command", req)
+	httpReq, err := c.execd.buildSSERequest(streamCtx, execdPathCommand, req)
 	if err != nil {
 		return err
 	}
@@ -278,7 +278,7 @@ func (c *filesystemClient) Upload(ctx context.Context, path string, content io.R
 		baseURL = c.execd.client.GetConfig().Servers[0].URL
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
-	reqURL, err := url.JoinPath(baseURL, "/files/upload")
+	reqURL, err := url.JoinPath(baseURL, execdPathFilesUpload)
 	if err != nil {
 		return err
 	}
@@ -291,7 +291,7 @@ func (c *filesystemClient) Upload(ctx context.Context, path string, content io.R
 	metadataJSON, _ := json.Marshal(metadata)
 	metadataPart, err := w.CreatePart(map[string][]string{
 		"Content-Disposition": {`form-data; name="metadata"; filename="metadata.json"`},
-		"Content-Type":        {"application/json"},
+		"Content-Type":        {contentTypeJSON},
 	})
 	if err != nil {
 		return err
@@ -322,12 +322,12 @@ func (c *filesystemClient) Upload(ctx context.Context, path string, content io.R
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", contentType)
+	req.Header.Set(headerContentType, contentType)
 	if c.execd.userAgent != "" {
-		req.Header.Set("User-Agent", c.execd.userAgent)
+		req.Header.Set(headerUserAgent, c.execd.userAgent)
 	}
 	if c.execd.accessToken != "" {
-		req.Header.Set("X-EXECD-ACCESS-TOKEN", c.execd.accessToken)
+		req.Header.Set(headerExecdAccessToken, c.execd.accessToken)
 	}
 
 	hc := c.execd.httpClient
@@ -375,7 +375,7 @@ func (c *filesystemClient) CreateDirectory(ctx context.Context, path string, mod
 		modeVal = *mode
 	}
 	perm := execd.Permission{Mode: modeVal}
-	owner, group := "root", "root" // Match OpenAPI example; some servers require these
+	owner, group := defaultFileOwner, defaultFileGroup // Match OpenAPI example; some servers require these
 	perm.Owner = &owner
 	perm.Group = &group
 	_, err := c.execd.client.FilesystemAPI.MakeDirs(c.execd.authContext(ctx)).

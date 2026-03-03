@@ -11,14 +11,14 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg == nil {
 		t.Fatal("DefaultConfig returned nil")
 	}
-	if cfg.SandboxAPIURL != "http://localhost:8080/v1" {
-		t.Errorf("SandboxAPIURL = %q, want http://localhost:8080/v1", cfg.SandboxAPIURL)
+	if cfg.SandboxAPIURL != DefaultSandboxAPIURL {
+		t.Errorf("SandboxAPIURL = %q, want %q", cfg.SandboxAPIURL, DefaultSandboxAPIURL)
 	}
-	if cfg.ExecdAPIURL != "http://localhost:44772" {
-		t.Errorf("ExecdAPIURL = %q, want http://localhost:44772", cfg.ExecdAPIURL)
+	if cfg.ExecdAPIURL != DefaultExecdAPIURL {
+		t.Errorf("ExecdAPIURL = %q, want %q", cfg.ExecdAPIURL, DefaultExecdAPIURL)
 	}
-	if cfg.UserAgent != "opensandbox-client-go/1.0" {
-		t.Errorf("UserAgent = %q, want opensandbox-client-go/1.0", cfg.UserAgent)
+	if cfg.UserAgent != defaultUserAgent {
+		t.Errorf("UserAgent = %q, want %q", cfg.UserAgent, defaultUserAgent)
 	}
 }
 

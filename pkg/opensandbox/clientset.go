@@ -31,7 +31,7 @@ func NewForConfig(c *Config) (*Clientset, error) {
 	sandboxCfg.UserAgent = c.UserAgent
 	apiKey := c.APIKey
 	if apiKey == "" {
-		apiKey = os.Getenv("OPEN_SANDBOX_API_KEY")
+		apiKey = os.Getenv(EnvAPIKey)
 	}
 	cs.sandbox = &sandboxClient{
 		client: sandbox.NewAPIClient(sandboxCfg),
