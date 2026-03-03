@@ -1,3 +1,3 @@
-module github.com/alibaba/opensandbox-client-go
+module github.com/wylswz/opensandbox-client-go
 
 go 1.26

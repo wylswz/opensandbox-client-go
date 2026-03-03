@@ -6,7 +6,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/alibaba/opensandbox-client-go/internal/generated/execd"
+	"github.com/wylswz/opensandbox-client-go/internal/generated/execd"
 )
 
 type execdClient struct {

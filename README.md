@@ -1,6 +1,6 @@
 # OpenSandbox Go Client
 
-Go client for the [OpenSandbox](https://github.com/alibaba/OpenSandbox) API, designed in the style of [kubernetes/client-go](https://github.com/kubernetes/client-go).
+Go client for the [OpenSandbox](https://github.com/wylswz/OpenSandbox) API, designed in the style of [kubernetes/client-go](https://github.com/kubernetes/client-go).
 
 ## Client structure
 
@@ -12,7 +12,7 @@ The client contains two API groups:
 ## Installation
 
 ```bash
-go get github.com/alibaba/opensandbox-client-go
+go get github.com/wylswz/opensandbox-client-go
 ```
 
 ## Usage
@@ -22,9 +22,9 @@ import (
     "context"
     "log"
 
-    "github.com/alibaba/opensandbox-client-go/internal/generated/execd"
-    "github.com/alibaba/opensandbox-client-go/internal/generated/sandbox"
-    "github.com/alibaba/opensandbox-client-go/pkg/opensandbox"
+    "github.com/wylswz/opensandbox-client-go/internal/generated/execd"
+    "github.com/wylswz/opensandbox-client-go/internal/generated/sandbox"
+    "github.com/wylswz/opensandbox-client-go/pkg/opensandbox"
 )
 
 func main() {

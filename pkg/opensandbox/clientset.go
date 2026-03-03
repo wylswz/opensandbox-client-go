@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/alibaba/opensandbox-client-go/internal/generated/execd"
-	"github.com/alibaba/opensandbox-client-go/internal/generated/sandbox"
+	"github.com/wylswz/opensandbox-client-go/internal/generated/execd"
+	"github.com/wylswz/opensandbox-client-go/internal/generated/sandbox"
 )
 
 // Clientset is the main client for OpenSandbox APIs, similar to kubernetes.Clientset.

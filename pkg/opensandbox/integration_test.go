@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alibaba/opensandbox-client-go/internal/generated/execd"
-	"github.com/alibaba/opensandbox-client-go/internal/generated/sandbox"
+	"github.com/wylswz/opensandbox-client-go/internal/generated/execd"
+	"github.com/wylswz/opensandbox-client-go/internal/generated/sandbox"
 )
 
 func getTestConfig(t *testing.T) *Config {

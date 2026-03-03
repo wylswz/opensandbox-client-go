@@ -72,7 +72,7 @@ run_generator() {
         --input-spec "${spec_file}" \
         --generator-name go \
         --output "${output_dir}" \
-        --git-user-id alibaba \
+        --git-user-id wylswz \
         --git-repo-id opensandbox-client-go \
         --additional-properties=packageName="${package_name}" \
         --additional-properties=withGoMod=false \
