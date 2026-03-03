@@ -11,3 +11,6 @@ execd_image = "opensandbox/execd:v1.0.6"
 
 [docker]
 network_mode = "bridge"
+# When server runs in a container, host IP for bridge-mode endpoints.
+# 127.0.0.1 lets the host (where tests run) reach sandbox port mappings via localhost.
+host_ip = "127.0.0.1"

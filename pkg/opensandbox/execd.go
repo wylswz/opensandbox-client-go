@@ -1,17 +1,26 @@
 package opensandbox
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
-	"os"
+	"mime/multipart"
+	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/wylswz/opensandbox-client-go/internal/generated/execd"
+	"github.com/wylswz/opensandbox-client-go/internal/sse"
 )
 
 type execdClient struct {
 	client      *execd.APIClient
 	accessToken string
+	execdAPIURL string
+	httpClient  *http.Client
+	userAgent   string
 }
 
 func (c *execdClient) authContext(ctx context.Context) context.Context {
@@ -41,6 +50,57 @@ func (c *execdClient) Metrics() MetricsInterface {
 
 func (c *execdClient) Health() HealthInterface {
 	return &healthClient{execd: c}
+}
+
+// buildSSERequest builds an HTTP request for SSE endpoints (RunCode, RunCommand).
+// All headers (auth, content-type, etc.) are set here; the sse package is pure.
+func (c *execdClient) buildSSERequest(ctx context.Context, path string, body interface{}) (*http.Request, error) {
+	baseURL := c.execdAPIURL
+	if baseURL == "" && len(c.client.GetConfig().Servers) > 0 {
+		baseURL = c.client.GetConfig().Servers[0].URL
+	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
+
+	reqURL, err := url.JoinPath(baseURL, path)
+	if err != nil {
+		return nil, err
+	}
+
+	var bodyReader io.Reader
+	if body != nil {
+		jsonBody, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		bodyReader = bytes.NewReader(jsonBody)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bodyReader)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	if c.userAgent != "" {
+		req.Header.Set("User-Agent", c.userAgent)
+	}
+	if c.accessToken != "" {
+		req.Header.Set("X-EXECD-ACCESS-TOKEN", c.accessToken)
+	}
+
+	return req, nil
+}
+
+func parseLastServerStreamEvent(events []json.RawMessage) (*execd.ServerStreamEvent, error) {
+	if len(events) == 0 {
+		return &execd.ServerStreamEvent{}, nil
+	}
+	var evt execd.ServerStreamEvent
+	if err := json.Unmarshal(events[len(events)-1], &evt); err != nil {
+		return nil, err
+	}
+	return &evt, nil
 }
 
 // codeClient implements CodeInterface
@@ -80,10 +140,15 @@ func (c *codeClient) DeleteContextsByLanguage(ctx context.Context, language stri
 }
 
 func (c *codeClient) RunCode(ctx context.Context, req execd.RunCodeRequest) (*execd.ServerStreamEvent, error) {
-	resp, _, err := c.execd.client.CodeInterpretingAPI.RunCode(c.execd.authContext(ctx)).
-		RunCodeRequest(req).
-		Execute()
-	return resp, err
+	httpReq, err := c.execd.buildSSERequest(ctx, "/code", req)
+	if err != nil {
+		return nil, err
+	}
+	events, err := sse.Do(ctx, c.execd.httpClient, httpReq)
+	if err != nil {
+		return nil, err
+	}
+	return parseLastServerStreamEvent(events)
 }
 
 func (c *codeClient) InterruptCode(ctx context.Context) error {
@@ -97,10 +162,15 @@ type commandClient struct {
 }
 
 func (c *commandClient) Run(ctx context.Context, req execd.RunCommandRequest) (*execd.ServerStreamEvent, error) {
-	resp, _, err := c.execd.client.CommandAPI.RunCommand(c.execd.authContext(ctx)).
-		RunCommandRequest(req).
-		Execute()
-	return resp, err
+	httpReq, err := c.execd.buildSSERequest(ctx, "/command", req)
+	if err != nil {
+		return nil, err
+	}
+	events, err := sse.Do(ctx, c.execd.httpClient, httpReq)
+	if err != nil {
+		return nil, err
+	}
+	return parseLastServerStreamEvent(events)
 }
 
 func (c *commandClient) GetStatus(ctx context.Context, sessionID string) (*execd.CommandStatusResponse, error) {
@@ -135,27 +205,80 @@ func (c *filesystemClient) GetInfo(ctx context.Context, paths []string) (*map[st
 }
 
 func (c *filesystemClient) Upload(ctx context.Context, path string, content io.Reader) error {
-	// Create temp file for multipart upload (generated API expects *os.File)
-	tmp, err := os.CreateTemp("", "opensandbox-upload-*")
+	// Build multipart manually: execd expects metadata as a file part (INVALID_FILE_METADATA / "metadata file is missing")
+	// when sent as a form field. Send metadata first (JSON), then file.
+	baseURL := c.execd.execdAPIURL
+	if baseURL == "" && len(c.execd.client.GetConfig().Servers) > 0 {
+		baseURL = c.execd.client.GetConfig().Servers[0].URL
+	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	reqURL, err := url.JoinPath(baseURL, "/files/upload")
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmp.Name())
-	defer tmp.Close()
 
-	if _, err := io.Copy(tmp, content); err != nil {
+	body := &bytes.Buffer{}
+	w := multipart.NewWriter(body)
+
+	// 1. metadata part - execd expects it as a file part with Content-Type application/json
+	metadata := execd.FileMetadata{Path: &path}
+	metadataJSON, _ := json.Marshal(metadata)
+	metadataPart, err := w.CreatePart(map[string][]string{
+		"Content-Disposition": {`form-data; name="metadata"; filename="metadata.json"`},
+		"Content-Type":        {"application/json"},
+	})
+	if err != nil {
 		return err
 	}
-	if _, err := tmp.Seek(0, 0); err != nil {
+	if _, err := metadataPart.Write(metadataJSON); err != nil {
 		return err
 	}
 
-	metadata, _ := json.Marshal(execd.FileMetadata{Path: &path})
-	_, err = c.execd.client.FilesystemAPI.UploadFile(c.execd.authContext(ctx)).
-		Metadata(string(metadata)).
-		File(tmp).
-		Execute()
-	return err
+	// 2. file part
+	fileBytes, err := io.ReadAll(content)
+	if err != nil {
+		return err
+	}
+	filePart, err := w.CreateFormFile("file", "upload")
+	if err != nil {
+		return err
+	}
+	if _, err := filePart.Write(fileBytes); err != nil {
+		return err
+	}
+
+	contentType := w.FormDataContentType()
+	if err := w.Close(); err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", contentType)
+	if c.execd.userAgent != "" {
+		req.Header.Set("User-Agent", c.execd.userAgent)
+	}
+	if c.execd.accessToken != "" {
+		req.Header.Set("X-EXECD-ACCESS-TOKEN", c.execd.accessToken)
+	}
+
+	hc := c.execd.httpClient
+	if hc == nil {
+		hc = c.execd.client.GetConfig().HTTPClient
+	}
+	resp, err := hc.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("%s (response: %s)", resp.Status, string(respBody))
+	}
+	return nil
 }
 
 func (c *filesystemClient) Download(ctx context.Context, path string) (io.ReadCloser, error) {
@@ -181,11 +304,14 @@ func (c *filesystemClient) Delete(ctx context.Context, paths []string) error {
 }
 
 func (c *filesystemClient) CreateDirectory(ctx context.Context, path string, mode *int32) error {
-	modeVal := int32(0755)
+	modeVal := int32(755) // API expects decimal 755 (octal notation), not 0755 (493)
 	if mode != nil {
 		modeVal = *mode
 	}
 	perm := execd.Permission{Mode: modeVal}
+	owner, group := "root", "root" // Match OpenAPI example; some servers require these
+	perm.Owner = &owner
+	perm.Group = &group
 	_, err := c.execd.client.FilesystemAPI.MakeDirs(c.execd.authContext(ctx)).
 		RequestBody(map[string]execd.Permission{path: perm}).
 		Execute()

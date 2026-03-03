@@ -29,6 +29,14 @@ fi
 
 # Cleanup on exit
 cleanup() {
+    local exit_code=$?
+    if [[ ${exit_code} -ne 0 ]] && docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^${CONTAINER_NAME}$"; then
+        log "Tests failed (exit ${exit_code}). Dumping OpenSandbox server logs..."
+        docker logs "${CONTAINER_NAME}" 2>&1 | tail -200
+        LOG_FILE="${ROOT_DIR}/opensandbox-server.log"
+        docker logs "${CONTAINER_NAME}" 2>&1 > "${LOG_FILE}"
+        log "Full logs saved to ${LOG_FILE}"
+    fi
     log "Stopping OpenSandbox server..."
     docker rm -f "${CONTAINER_NAME}" 2>/dev/null || true
 }

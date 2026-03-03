@@ -47,8 +47,11 @@ func NewForConfig(c *Config) (*Clientset, error) {
 	}
 	execdCfg.UserAgent = c.UserAgent
 	cs.execd = &execdClient{
-		client:      execd.NewAPIClient(execdCfg),
-		accessToken: c.AccessToken,
+		client:       execd.NewAPIClient(execdCfg),
+		accessToken:  c.AccessToken,
+		execdAPIURL:  c.ExecdAPIURL,
+		httpClient:   c.HTTPClient,
+		userAgent:    c.UserAgent,
 	}
 
 	return cs, nil

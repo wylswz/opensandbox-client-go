@@ -4,6 +4,8 @@ package opensandbox
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"strings"
@@ -13,6 +15,21 @@ import (
 	"github.com/wylswz/opensandbox-client-go/internal/generated/execd"
 	"github.com/wylswz/opensandbox-client-go/internal/generated/sandbox"
 )
+
+// formatAPIErr appends execd response body to error message when available.
+// Execd runs in sandbox containers; OpenSandbox server logs don't show execd errors.
+func formatAPIErr(err error) string {
+	if err == nil {
+		return ""
+	}
+	var apiErr *execd.GenericOpenAPIError
+	if errors.As(err, &apiErr) {
+		if body := apiErr.Body(); len(body) > 0 {
+			return fmt.Sprintf("%v (response: %s)", err, string(body))
+		}
+	}
+	return err.Error()
+}
 
 func getTestConfig(t *testing.T) *Config {
 	sandboxURL := os.Getenv("OPEN_SANDBOX_SANDBOX_URL")
@@ -213,8 +230,10 @@ func execdTestHelper(t *testing.T) (*Clientset, string, func()) {
 		time.Sleep(2 * time.Second)
 	}
 
-	// Get execd endpoint (port 44772) with server proxy for host reachability
-	ep, err := cs.Sandbox().GetEndpointWithProxy(ctx, sandboxID, 44772, true)
+	// Get execd endpoint (port 44772). use_server_proxy=false: client connects directly.
+	// The server proxy returns 502 when the server runs in Docker (proxy can't reach sandbox).
+	// With host_ip=host.docker.internal in config, direct endpoint is reachable from host.
+	ep, err := cs.Sandbox().GetEndpointWithProxy(ctx, sandboxID, 44772, false)
 	if err != nil {
 		cleanup()
 		t.Fatalf("GetEndpoint execd: %v", err)
@@ -225,10 +244,15 @@ func execdTestHelper(t *testing.T) (*Clientset, string, func()) {
 	}
 
 	// Build execd URL - endpoint may be "host/path", "host:port/path", or "/path"
+	// Server returns "host:port/proxy/44772" for execd; execd serves at root, so strip the path.
 	execdURL := strings.TrimSpace(ep.Endpoint)
 	if execdURL == "" {
 		cleanup()
 		t.Fatal("Endpoint URL is empty")
+	}
+	// Strip /proxy/44772 suffix - execd expects /ping etc at root, not /proxy/44772/ping
+	if idx := strings.Index(execdURL, "/proxy/"); idx >= 0 {
+		execdURL = execdURL[:idx]
 	}
 	if !strings.HasPrefix(execdURL, "http://") && !strings.HasPrefix(execdURL, "https://") {
 		if strings.HasPrefix(execdURL, "/") {
@@ -248,7 +272,9 @@ func execdTestHelper(t *testing.T) (*Clientset, string, func()) {
 		}
 	}
 
-	// Extract X-EXECD-ACCESS-TOKEN from headers
+	// Extract X-EXECD-ACCESS-TOKEN from endpoint headers, or fall back to env var.
+	// The OpenSandbox server may not yet return headers in the endpoint response;
+	// OPEN_SANDBOX_EXECD_ACCESS_TOKEN allows tests to run against such servers.
 	accessToken := ""
 	if ep.Headers != nil {
 		for k, v := range ep.Headers {
@@ -259,9 +285,11 @@ func execdTestHelper(t *testing.T) (*Clientset, string, func()) {
 		}
 	}
 	if accessToken == "" {
-		cleanup()
-		t.Fatal("Endpoint headers missing X-EXECD-ACCESS-TOKEN")
+		accessToken = os.Getenv("OPEN_SANDBOX_EXECD_ACCESS_TOKEN")
 	}
+	// When the server does not return the token and no env var is set, execd may
+	// run without auth (--access-token empty). Use empty string as fallback.
+	// If execd requires auth, requests will fail with 401.
 
 	// Create clientset with execd config
 	execdCfg := DefaultConfig()
@@ -340,23 +368,23 @@ func TestIntegration_Execd_Filesystem(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 
-	// Create directory
-	testDir := "/tmp/opensandbox-test"
+	// Create directory (use /workspace - sandbox root; /tmp may not exist or be writable)
+	testDir := "/workspace/opensandbox-test"
 	if err := cs.Execd().Filesystem().CreateDirectory(ctx, testDir, nil); err != nil {
-		t.Fatalf("CreateDirectory: %v", err)
+		t.Fatalf("CreateDirectory: %s", formatAPIErr(err))
 	}
 
 	// Upload file
 	testFile := testDir + "/hello.txt"
 	content := strings.NewReader("Hello OpenSandbox!")
 	if err := cs.Execd().Filesystem().Upload(ctx, testFile, content); err != nil {
-		t.Fatalf("Upload: %v", err)
+		t.Fatalf("Upload: %s", formatAPIErr(err))
 	}
 
 	// Get info
 	info, err := cs.Execd().Filesystem().GetInfo(ctx, []string{testFile})
 	if err != nil {
-		t.Fatalf("GetInfo: %v", err)
+		t.Fatalf("GetInfo: %s", formatAPIErr(err))
 	}
 	if info == nil {
 		t.Fatal("GetInfo returned nil")
@@ -369,7 +397,7 @@ func TestIntegration_Execd_Filesystem(t *testing.T) {
 	// Download
 	rc, err := cs.Execd().Filesystem().Download(ctx, testFile)
 	if err != nil {
-		t.Fatalf("Download: %v", err)
+		t.Fatalf("Download: %s", formatAPIErr(err))
 	}
 	defer rc.Close()
 	// Read and verify (simplified - just ensure we get something)
@@ -377,12 +405,12 @@ func TestIntegration_Execd_Filesystem(t *testing.T) {
 
 	// Delete file
 	if err := cs.Execd().Filesystem().Delete(ctx, []string{testFile}); err != nil {
-		t.Fatalf("Delete: %v", err)
+		t.Fatalf("Delete: %s", formatAPIErr(err))
 	}
 
 	// Delete directory
 	if err := cs.Execd().Filesystem().DeleteDirectory(ctx, testDir); err != nil {
-		t.Fatalf("DeleteDirectory: %v", err)
+		t.Fatalf("DeleteDirectory: %s", formatAPIErr(err))
 	}
 }
 
