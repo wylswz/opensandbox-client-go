@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/wylswz/opensandbox-client-go/internal/generated/execd"
@@ -103,6 +105,63 @@ func parseLastServerStreamEvent(events []json.RawMessage) (*execd.ServerStreamEv
 	return &evt, nil
 }
 
+// parseAggregatedServerStreamEvent merges output from all SSE events into a single
+// ServerStreamEvent. The execd API streams multiple events (stdout, result,
+// execution_complete); the last event alone often has no output. Aggregating
+// ensures print() output and result display_data are captured.
+func parseAggregatedServerStreamEvent(events []json.RawMessage) (*execd.ServerStreamEvent, error) {
+	merged := &execd.ServerStreamEvent{}
+	var textParts []string
+	var lastResults map[string]interface{}
+	var lastError *execd.ServerStreamEventError
+	var lastExecutionCount *int32
+	var lastExecutionTime *int64
+
+	for _, raw := range events {
+		var evt execd.ServerStreamEvent
+		if err := json.Unmarshal(raw, &evt); err != nil {
+			continue
+		}
+		t := evt.GetType()
+		// Capture text from stdout/stderr/stream; skip init/status/ping
+		if (t == "stdout" || t == "stderr" || t == "stream" || t == "") && evt.GetText() != "" {
+			textParts = append(textParts, evt.GetText())
+		}
+		// result or execute_result (Jupyter) carry display_data
+		if (t == "result" || t == "execute_result") && evt.Results != nil {
+			lastResults = evt.Results
+		}
+		if evt.Error != nil && lastError == nil {
+			lastError = evt.Error
+		}
+		if evt.ExecutionCount != nil {
+			lastExecutionCount = evt.ExecutionCount
+		}
+		if evt.ExecutionTime != nil {
+			lastExecutionTime = evt.ExecutionTime
+		}
+	}
+
+	if len(textParts) > 0 {
+		merged.Text = stringPtr(strings.Join(textParts, ""))
+	}
+	if lastResults != nil {
+		merged.Results = lastResults
+	}
+	if lastError != nil {
+		merged.Error = lastError
+	}
+	if lastExecutionCount != nil {
+		merged.ExecutionCount = lastExecutionCount
+	}
+	if lastExecutionTime != nil {
+		merged.ExecutionTime = lastExecutionTime
+	}
+	return merged, nil
+}
+
+func stringPtr(s string) *string { return &s }
+
 // codeClient implements CodeInterface
 type codeClient struct {
 	execd *execdClient
@@ -148,7 +207,16 @@ func (c *codeClient) RunCode(ctx context.Context, req execd.RunCodeRequest) (*ex
 	if err != nil {
 		return nil, err
 	}
-	return parseLastServerStreamEvent(events)
+	if os.Getenv("OPENSANDBOX_DEBUG") != "" {
+		for i, raw := range events {
+			log.Printf("[execd] event %d: %s", i, string(raw))
+		}
+	}
+	merged, err := parseAggregatedServerStreamEvent(events)
+	if err == nil && os.Getenv("OPENSANDBOX_DEBUG") != "" {
+		log.Printf("[execd] merged: text=%q results=%v", merged.GetText(), merged.GetResults())
+	}
+	return merged, err
 }
 
 func (c *codeClient) InterruptCode(ctx context.Context) error {

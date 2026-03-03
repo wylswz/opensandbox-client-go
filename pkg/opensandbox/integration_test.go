@@ -344,6 +344,14 @@ func TestIntegration_Execd_Code_CreateContext_RunCode(t *testing.T) {
 	if resp == nil {
 		t.Fatal("RunCode returned nil")
 	}
+	// Verify aggregated output contains expected result (print(2+2) -> "4")
+	output := resp.GetText()
+	if plain, ok := resp.GetResults()["text/plain"]; ok {
+		output += fmt.Sprint(plain)
+	}
+	if !strings.Contains(output, "4") {
+		t.Fatalf("RunCode: expected output to contain 4, got text=%q results=%v", resp.GetText(), resp.GetResults())
+	}
 	t.Logf("RunCode response: %+v", resp)
 }
 

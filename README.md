@@ -86,3 +86,10 @@ export OPEN_SANDBOX_SANDBOX_URL=http://localhost:8080/v1
 export OPEN_SANDBOX_API_KEY=your-api-key  # if auth enabled
 make test-integration
 ```
+
+## Examples
+
+Each example in `example/` is an independent Go module that depends on this repository via a local `replace` directive.
+
+- `example/shell`: CLI for sandbox lifecycle + interactive command streaming
+- `example/mcp-python`: stdio MCP server exposing one tool to execute Python in a single reusable sandbox
